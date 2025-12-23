@@ -5,6 +5,7 @@
  */
 
 import { Composio } from '@composio/core';
+import { VercelProvider } from '@composio/vercel';
 import { IntegrationsClient } from '@supermind/shared-aws-utils';
 
 /**
@@ -25,7 +26,10 @@ export async function createComposioTools(
 	userId: string,
 	composioApiKey: string
 ) {
-	const composio = new Composio({ apiKey: composioApiKey });
+	const composio = new Composio({
+		apiKey: composioApiKey,
+		provider: new VercelProvider()
+	});
 
 	// Fetch user's active integrations
 	const integrations = await IntegrationsClient.listIntegrations(userId);
@@ -61,13 +65,15 @@ export async function createComposioTools(
 
 	try {
 		// Get all tools for connected integrations
+		// VercelProvider formats tools correctly for Vercel AI SDK and adds execute function
 		const tools = await composio.tools.get(userId, {
 			toolkits: toolkits as any,
 		});
 
 		console.log('[createComposioTools] Successfully fetched Composio tools:', {
-			toolCount: Object.keys(tools).length,
-			toolNames: Object.keys(tools),
+			type: typeof tools,
+			isArray: Array.isArray(tools),
+			toolCount: Array.isArray(tools) ? tools.length : Object.keys(tools).length,
 		});
 
 		return tools;

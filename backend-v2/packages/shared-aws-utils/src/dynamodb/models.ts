@@ -122,6 +122,29 @@ export interface WebSessionMetadataDAO extends WebSessionMetadata {
     SK: string;
 }
 
+export interface WhatsAppSessionMetadata {
+    userId: string;
+    sessionId: string;
+    phoneNumber: string;
+    title?: string;
+    createdAt: string;
+    updatedAt: string;
+    messageCount: number;
+    archived: boolean;
+    starred: boolean;
+}
+
+export interface WhatsAppSessionMetadataDAO extends WhatsAppSessionMetadata {
+    /**
+     * Partition Key: USER#<userId>
+     */
+    PK: string;
+    /**
+     * Sort Key: WHATSAPP_SESSION#<sessionId>#METADATA
+     */
+    SK: string;
+}
+
 export type MessageDirection = 'inbound' | 'outbound';
 export type MessageSender = 'user' | 'assistant' | 'system';
 export type InboundMessageProcessingStatus = 'received' | 'processing' | 'completed' | 'failed';

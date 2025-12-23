@@ -3,6 +3,8 @@ import { dynamoDBDocumentClient, getTableName } from './client';
 import type {
     WebSessionMetadata,
     WebSessionMetadataDAO,
+    WhatsAppSessionMetadata,
+    WhatsAppSessionMetadataDAO,
     ChatMessage,
     ChatMessageDAO,
 } from './models';
@@ -261,6 +263,257 @@ export class ChatHistoryClient {
     }
 
     // ============================================
+    // WhatsApp Session Metadata Operations
+    // ============================================
+
+    /**
+     * Create a new WhatsApp session
+     */
+    static async createWhatsAppSession(
+        session: Omit<WhatsAppSessionMetadata, 'createdAt' | 'updatedAt' | 'messageCount' | 'archived' | 'starred'>
+    ): Promise<WhatsAppSessionMetadata> {
+        const now = new Date().toISOString();
+        const newSession: WhatsAppSessionMetadata = {
+            ...session,
+            messageCount: 0,
+            archived: false,
+            starred: false,
+            createdAt: now,
+            updatedAt: now,
+        };
+
+        const dao: WhatsAppSessionMetadataDAO = {
+            ...newSession,
+            PK: `USER#${session.userId}`,
+            SK: `WHATSAPP_SESSION#${session.sessionId}#METADATA`,
+        };
+
+        try {
+            await dynamoDBDocumentClient.send(
+                new PutCommand({
+                    TableName: getTableName('chatHistory'),
+                    Item: dao,
+                    ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)',
+                })
+            );
+
+            logger.info('WhatsApp session created successfully', {
+                userId: session.userId,
+                sessionId: session.sessionId,
+            });
+            return newSession;
+        } catch (error: any) {
+            if (error.name === 'ConditionalCheckFailedException') {
+                logger.error('WhatsApp session already exists', {
+                    userId: session.userId,
+                    sessionId: session.sessionId,
+                });
+                throw new Error(
+                    `WhatsApp session already exists for userId: ${session.userId}, sessionId: ${session.sessionId}`
+                );
+            }
+            logger.error('Error creating WhatsApp session', {
+                error,
+                userId: session.userId,
+                sessionId: session.sessionId,
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get WhatsApp session metadata
+     */
+    static async getWhatsAppSession(userId: string, sessionId: string): Promise<WhatsAppSessionMetadata | null> {
+        try {
+            const response = await dynamoDBDocumentClient.send(
+                new GetCommand({
+                    TableName: getTableName('chatHistory'),
+                    Key: {
+                        PK: `USER#${userId}`,
+                        SK: `WHATSAPP_SESSION#${sessionId}#METADATA`,
+                    },
+                })
+            );
+
+            if (!response.Item) {
+                logger.info('WhatsApp session not found', { userId, sessionId });
+                return null;
+            }
+
+            const dao = response.Item as WhatsAppSessionMetadataDAO;
+            const { PK, SK, ...session } = dao;
+            return session as WhatsAppSessionMetadata;
+        } catch (error) {
+            logger.error('Error getting WhatsApp session', { error, userId, sessionId });
+            throw error;
+        }
+    }
+
+    /**
+     * List all WhatsApp sessions for a user
+     */
+    static async listWhatsAppSessions(
+        userId: string,
+        limit?: number,
+        archived?: boolean
+    ): Promise<WhatsAppSessionMetadata[]> {
+        try {
+            const params: any = {
+                TableName: getTableName('chatHistory'),
+                KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
+                ExpressionAttributeValues: {
+                    ':pk': `USER#${userId}`,
+                    ':skPrefix': 'WHATSAPP_SESSION#',
+                },
+                Limit: limit,
+                ScanIndexForward: false, // Most recent first
+            };
+
+            if (archived !== undefined) {
+                params.FilterExpression = 'archived = :archived';
+                params.ExpressionAttributeValues[':archived'] = archived;
+            }
+
+            const response = await dynamoDBDocumentClient.send(new QueryCommand(params));
+
+            if (!response.Items || response.Items.length === 0) {
+                logger.info('No WhatsApp sessions found for user', { userId });
+                return [];
+            }
+
+            return response.Items.map((item) => {
+                const dao = item as WhatsAppSessionMetadataDAO;
+                const { PK, SK, ...session } = dao;
+                return session as WhatsAppSessionMetadata;
+            });
+        } catch (error) {
+            logger.error('Error listing WhatsApp sessions', { error, userId });
+            throw error;
+        }
+    }
+
+    /**
+     * Update WhatsApp session metadata
+     */
+    static async updateWhatsAppSession(
+        userId: string,
+        sessionId: string,
+        updates: Partial<Omit<WhatsAppSessionMetadata, 'userId' | 'sessionId' | 'createdAt' | 'updatedAt' | 'messageCount'>>
+    ): Promise<WhatsAppSessionMetadata> {
+        const now = new Date().toISOString();
+
+        const updateExpressions: string[] = [];
+        const expressionAttributeNames: Record<string, string> = {};
+        const expressionAttributeValues: Record<string, any> = {};
+
+        Object.entries(updates).forEach(([key, value]) => {
+            if (value !== undefined) {
+                updateExpressions.push(`#${key} = :${key}`);
+                expressionAttributeNames[`#${key}`] = key;
+                expressionAttributeValues[`:${key}`] = value;
+            }
+        });
+
+        updateExpressions.push('#updatedAt = :updatedAt');
+        expressionAttributeNames['#updatedAt'] = 'updatedAt';
+        expressionAttributeValues[':updatedAt'] = now;
+
+        try {
+            const response = await dynamoDBDocumentClient.send(
+                new UpdateCommand({
+                    TableName: getTableName('chatHistory'),
+                    Key: {
+                        PK: `USER#${userId}`,
+                        SK: `WHATSAPP_SESSION#${sessionId}#METADATA`,
+                    },
+                    UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+                    ExpressionAttributeNames: expressionAttributeNames,
+                    ExpressionAttributeValues: expressionAttributeValues,
+                    ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+                    ReturnValues: 'ALL_NEW',
+                })
+            );
+
+            logger.info('WhatsApp session updated successfully', { userId, sessionId });
+            const dao = response.Attributes as WhatsAppSessionMetadataDAO;
+            const { PK, SK, ...session } = dao;
+            return session as WhatsAppSessionMetadata;
+        } catch (error: any) {
+            if (error.name === 'ConditionalCheckFailedException') {
+                logger.error('WhatsApp session not found for update', { userId, sessionId });
+                throw new Error(`WhatsApp session not found for userId: ${userId}, sessionId: ${sessionId}`);
+            }
+            logger.error('Error updating WhatsApp session', { error, userId, sessionId });
+            throw error;
+        }
+    }
+
+    /**
+     * Increment message count for a WhatsApp session (atomic operation)
+     */
+    static async incrementWhatsAppMessageCount(userId: string, sessionId: string): Promise<number> {
+        const now = new Date().toISOString();
+
+        try {
+            const response = await dynamoDBDocumentClient.send(
+                new UpdateCommand({
+                    TableName: getTableName('chatHistory'),
+                    Key: {
+                        PK: `USER#${userId}`,
+                        SK: `WHATSAPP_SESSION#${sessionId}#METADATA`,
+                    },
+                    UpdateExpression: 'ADD messageCount :increment SET updatedAt = :updatedAt',
+                    ExpressionAttributeValues: {
+                        ':increment': 1,
+                        ':updatedAt': now,
+                    },
+                    ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+                    ReturnValues: 'ALL_NEW',
+                })
+            );
+
+            const newCount = (response.Attributes as WhatsAppSessionMetadataDAO).messageCount;
+            logger.info('WhatsApp message count incremented', { userId, sessionId, newCount });
+            return newCount;
+        } catch (error: any) {
+            if (error.name === 'ConditionalCheckFailedException') {
+                logger.error('WhatsApp session not found for increment', { userId, sessionId });
+                throw new Error(`WhatsApp session not found for userId: ${userId}, sessionId: ${sessionId}`);
+            }
+            logger.error('Error incrementing WhatsApp message count', { error, userId, sessionId });
+            throw error;
+        }
+    }
+
+    /**
+     * Delete a WhatsApp session
+     */
+    static async deleteWhatsAppSession(userId: string, sessionId: string): Promise<void> {
+        try {
+            await dynamoDBDocumentClient.send(
+                new DeleteCommand({
+                    TableName: getTableName('chatHistory'),
+                    Key: {
+                        PK: `USER#${userId}`,
+                        SK: `WHATSAPP_SESSION#${sessionId}#METADATA`,
+                    },
+                    ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+                })
+            );
+
+            logger.info('WhatsApp session deleted successfully', { userId, sessionId });
+        } catch (error: any) {
+            if (error.name === 'ConditionalCheckFailedException') {
+                logger.error('WhatsApp session not found for deletion', { userId, sessionId });
+                throw new Error(`WhatsApp session not found for userId: ${userId}, sessionId: ${sessionId}`);
+            }
+            logger.error('Error deleting WhatsApp session', { error, userId, sessionId });
+            throw error;
+        }
+    }
+
+    // ============================================
     // Chat Message Operations
     // ============================================
 
@@ -481,6 +734,231 @@ export class ChatHistoryClient {
                 );
             }
             logger.error('Error deleting chat message', { error, userId, sessionId, messageId });
+            throw error;
+        }
+    }
+
+    // ============================================
+    // WhatsApp Message Operations
+    // ============================================
+
+    /**
+     * Create a new WhatsApp chat message
+     */
+    static async createWhatsAppMessage(message: Omit<ChatMessage, 'timestamp'>): Promise<ChatMessage> {
+        const now = new Date().toISOString();
+        const newMessage: ChatMessage = {
+            ...message,
+            timestamp: now,
+        };
+
+        const dao: ChatMessageDAO = {
+            ...newMessage,
+            PK: `USER#${message.userId}#WHATSAPP_SESSION#${message.sessionId}`,
+            SK: `MESSAGE#${message.messageId}`,
+        };
+
+        try {
+            await dynamoDBDocumentClient.send(
+                new PutCommand({
+                    TableName: getTableName('chatHistory'),
+                    Item: dao,
+                    ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)',
+                })
+            );
+
+            logger.info('WhatsApp chat message created successfully', {
+                userId: message.userId,
+                sessionId: message.sessionId,
+                messageId: message.messageId,
+            });
+            return newMessage;
+        } catch (error: any) {
+            if (error.name === 'ConditionalCheckFailedException') {
+                logger.error('WhatsApp chat message already exists', {
+                    userId: message.userId,
+                    sessionId: message.sessionId,
+                    messageId: message.messageId,
+                });
+                throw new Error(
+                    `WhatsApp chat message already exists for userId: ${message.userId}, sessionId: ${message.sessionId}, messageId: ${message.messageId}`
+                );
+            }
+            logger.error('Error creating WhatsApp chat message', {
+                error,
+                userId: message.userId,
+                sessionId: message.sessionId,
+                messageId: message.messageId,
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get a specific WhatsApp chat message
+     */
+    static async getWhatsAppMessage(
+        userId: string,
+        sessionId: string,
+        messageId: string
+    ): Promise<ChatMessage | null> {
+        try {
+            const response = await dynamoDBDocumentClient.send(
+                new GetCommand({
+                    TableName: getTableName('chatHistory'),
+                    Key: {
+                        PK: `USER#${userId}#WHATSAPP_SESSION#${sessionId}`,
+                        SK: `MESSAGE#${messageId}`,
+                    },
+                })
+            );
+
+            if (!response.Item) {
+                logger.info('WhatsApp chat message not found', { userId, sessionId, messageId });
+                return null;
+            }
+
+            const dao = response.Item as ChatMessageDAO;
+            const { PK, SK, ...message } = dao;
+            return message as ChatMessage;
+        } catch (error) {
+            logger.error('Error getting WhatsApp chat message', { error, userId, sessionId, messageId });
+            throw error;
+        }
+    }
+
+    /**
+     * List all messages in a WhatsApp session
+     */
+    static async listWhatsAppMessages(
+        userId: string,
+        sessionId: string,
+        limit?: number,
+        lastEvaluatedKey?: Record<string, any>
+    ): Promise<{ messages: ChatMessage[]; lastEvaluatedKey?: Record<string, any> }> {
+        try {
+            const params: any = {
+                TableName: getTableName('chatHistory'),
+                KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
+                ExpressionAttributeValues: {
+                    ':pk': `USER#${userId}#WHATSAPP_SESSION#${sessionId}`,
+                    ':skPrefix': 'MESSAGE#',
+                },
+                Limit: limit,
+                ScanIndexForward: true, // Oldest first (chronological order)
+            };
+
+            if (lastEvaluatedKey) {
+                params.ExclusiveStartKey = lastEvaluatedKey;
+            }
+
+            const response = await dynamoDBDocumentClient.send(new QueryCommand(params));
+
+            if (!response.Items || response.Items.length === 0) {
+                logger.info('No messages found in WhatsApp session', { userId, sessionId });
+                return { messages: [] };
+            }
+
+            const messages = response.Items.map((item) => {
+                const dao = item as ChatMessageDAO;
+                const { PK, SK, ...message } = dao;
+                return message as ChatMessage;
+            });
+
+            return {
+                messages,
+                lastEvaluatedKey: response.LastEvaluatedKey,
+            };
+        } catch (error) {
+            logger.error('Error listing WhatsApp messages', { error, userId, sessionId });
+            throw error;
+        }
+    }
+
+    /**
+     * Update a WhatsApp chat message
+     */
+    static async updateWhatsAppMessage(
+        userId: string,
+        sessionId: string,
+        messageId: string,
+        updates: Partial<
+            Omit<ChatMessage, 'userId' | 'sessionId' | 'messageId' | 'timestamp'>
+        >
+    ): Promise<ChatMessage> {
+        const updateExpressions: string[] = [];
+        const expressionAttributeNames: Record<string, string> = {};
+        const expressionAttributeValues: Record<string, any> = {};
+
+        Object.entries(updates).forEach(([key, value]) => {
+            if (value !== undefined) {
+                updateExpressions.push(`#${key} = :${key}`);
+                expressionAttributeNames[`#${key}`] = key;
+                expressionAttributeValues[`:${key}`] = value;
+            }
+        });
+
+        if (updateExpressions.length === 0) {
+            throw new Error('No updates provided');
+        }
+
+        try {
+            const response = await dynamoDBDocumentClient.send(
+                new UpdateCommand({
+                    TableName: getTableName('chatHistory'),
+                    Key: {
+                        PK: `USER#${userId}#WHATSAPP_SESSION#${sessionId}`,
+                        SK: `MESSAGE#${messageId}`,
+                    },
+                    UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+                    ExpressionAttributeNames: expressionAttributeNames,
+                    ExpressionAttributeValues: expressionAttributeValues,
+                    ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+                    ReturnValues: 'ALL_NEW',
+                })
+            );
+
+            logger.info('WhatsApp chat message updated successfully', { userId, sessionId, messageId });
+            const dao = response.Attributes as ChatMessageDAO;
+            const { PK, SK, ...message } = dao;
+            return message as ChatMessage;
+        } catch (error: any) {
+            if (error.name === 'ConditionalCheckFailedException') {
+                logger.error('WhatsApp chat message not found for update', { userId, sessionId, messageId });
+                throw new Error(
+                    `WhatsApp chat message not found for userId: ${userId}, sessionId: ${sessionId}, messageId: ${messageId}`
+                );
+            }
+            logger.error('Error updating WhatsApp chat message', { error, userId, sessionId, messageId });
+            throw error;
+        }
+    }
+
+    /**
+     * Delete a WhatsApp chat message
+     */
+    static async deleteWhatsAppMessage(userId: string, sessionId: string, messageId: string): Promise<void> {
+        try {
+            await dynamoDBDocumentClient.send(
+                new DeleteCommand({
+                    TableName: getTableName('chatHistory'),
+                    Key: {
+                        PK: `USER#${userId}#WHATSAPP_SESSION#${sessionId}`,
+                        SK: `MESSAGE#${messageId}`,
+                    },
+                    ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+                })
+            );
+
+            logger.info('WhatsApp chat message deleted successfully', { userId, sessionId, messageId });
+        } catch (error: any) {
+            if (error.name === 'ConditionalCheckFailedException') {
+                logger.error('WhatsApp chat message not found for deletion', { userId, sessionId, messageId });
+                throw new Error(
+                    `WhatsApp chat message not found for userId: ${userId}, sessionId: ${sessionId}, messageId: ${messageId}`
+                );
+            }
+            logger.error('Error deleting WhatsApp chat message', { error, userId, sessionId, messageId });
             throw error;
         }
     }
