@@ -8,6 +8,8 @@ import { ORCHESTRATOR_SYSTEM_PROMPT } from './prompts.js';
 import { createBedrockWithMemory } from './provider.js';
 import { createComposioTools } from './tools.js';
 import type { OrchestratorConfig, OrchestratorResponse } from './types.js';
+// import Langfuse, { LangfuseGenerationClient } from 'langfuse';
+import { flushTelemetry } from './telemetry';
 
 /**
  * Orchestrator Agent for delegating tasks and managing conversations
@@ -115,6 +117,29 @@ export class Orchestrator {
 		}
 	}
 
+	// private initializeLangfuse(): LangfuseGenerationClient {
+	// 	const langfuse = new Langfuse({
+	// 		publicKey: process.env.LANGFUSE_PUBLIC_KEY!,
+	// 		secretKey: process.env.LANGFUSE_SECRET_KEY!,
+	// 		baseUrl: process.env.LANGFUSE_BASE_URL || '"https://us.cloud.langfuse.com"',
+	// 	});
+
+	// 	const trace = langfuse.trace({
+	// 		name: 'supermind',
+	// 		userId: this.config.userId,
+	// 		sessionId: this.config.sessionId,
+	// 		metadata: {
+	// 			model: this.config.modelId,
+	// 		}
+	// 	});
+
+	// 	return trace.generation({
+	// 		name: 'supermind-generation',
+	// 		model: this.config.modelId,
+	// 		input: this.conversationHistory,
+	// 	});
+	// }
+
 	/**
 	 * Process a user message (non-streaming)
 	 *
@@ -169,10 +194,15 @@ export class Orchestrator {
 
 		try {
 			console.log('[Orchestrator.processMessage] Calling generateText with model and tools');
+			// const langfuseGenerationClient = this.initializeLangfuse();
 			const result = await generateText({
 				model: this.model,
 				messages: this.conversationHistory,
 				tools: this.composioTools && Object.keys(this.composioTools).length > 0 ? this.composioTools : undefined,
+				experimental_telemetry: {
+					isEnabled: true,
+					functionId: 'orchestrator-processMessage',
+				}
 			});
 
 			console.log('[Orchestrator.processMessage] generateText completed', {
@@ -217,6 +247,8 @@ export class Orchestrator {
 			// Remove failed message from history
 			this.conversationHistory.pop();
 			throw error;
+		} finally {
+			await flushTelemetry();
 		}
 	}
 
@@ -271,6 +303,10 @@ export class Orchestrator {
 				model: this.model,
 				messages: this.conversationHistory,
 				tools: this.composioTools && Object.keys(this.composioTools).length > 0 ? this.composioTools : undefined,
+				experimental_telemetry: {
+					isEnabled: true,
+					functionId: 'orchestrator-processMessageStream',
+				}
 			});
 
 			console.log('[Orchestrator.processMessageStream] streamText initiated');
@@ -323,6 +359,8 @@ export class Orchestrator {
 			// Remove failed message from history
 			this.conversationHistory.pop();
 			throw error;
+		} finally {
+			await flushTelemetry();
 		}
 	}
 
