@@ -4,10 +4,9 @@
 
 import type { ModelMessage } from 'ai';
 import { generateText, streamText } from 'ai';
-import { IntegrationsClient, type AllowedThirdPartyConnectors } from '@supermind/shared-aws-utils';
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './prompts.js';
 import { createBedrockWithMemory } from './provider.js';
-import { createDelegationTools } from './tools.js';
+import { createComposioTools } from './tools.js';
 import type { OrchestratorConfig, OrchestratorResponse } from './types.js';
 
 /**
@@ -51,7 +50,8 @@ export class Orchestrator {
 	private model: ReturnType<typeof createBedrockWithMemory>;
 	private config: Required<Omit<OrchestratorConfig, 'composioApiKey' | 'connectionIds'>> & Pick<OrchestratorConfig, 'composioApiKey' | 'connectionIds'>;
 	private conversationHistory: ModelMessage[] = [];
-	private delegationTools?: ReturnType<typeof createDelegationTools>;
+	private composioTools?: any;
+	private toolsInitialized: boolean = false;
 
 	/**
 	 * Create a new Orchestrator instance
@@ -88,44 +88,30 @@ export class Orchestrator {
 			role: 'system',
 			content: ORCHESTRATOR_SYSTEM_PROMPT,
 		});
-
-		// Create delegation tools if Composio API key is provided
-		if (this.config.composioApiKey) {
-			console.log('Initializing delegation tools for Orchestrator');
-			this.delegationTools = createDelegationTools(
-				this.config.userId,
-				this.config.composioApiKey,
-				(connector) => this.getConnectionId(connector)
-			);
-		}
 	}
 
 	/**
-	 * Get Composio connection ID for a connector
-	 *
-	 * @param connector - Connector name (gmail, google_calendar, etc.)
-	 * @returns Connection ID or null if not connected
+	 * Initialize Composio tools lazily on first use
 	 */
-	private async getConnectionId(connector: string): Promise<string | null> {
+	private async initializeComposioTools(): Promise<void> {
+		if (this.toolsInitialized || !this.config.composioApiKey) {
+			return;
+		}
+
+		console.log('[Orchestrator] Initializing Composio tools');
+
 		try {
-			// Fetch integration from DynamoDB
-			const integration = await IntegrationsClient.getIntegration(
+			this.composioTools = await createComposioTools(
 				this.config.userId,
-				connector as AllowedThirdPartyConnectors
+				this.config.composioApiKey
 			);
+			this.toolsInitialized = true;
 
-			// Return connectionId if integration exists and is active
-			if (integration && integration.connectionStatus === 'active') {
-				return integration.connectionId;
-			}
-
-			// Fallback to config if provided (for testing/development)
-			return this.config.connectionIds?.[connector] || null;
+			console.log('[Orchestrator] Composio tools initialized successfully');
 		} catch (error) {
-			console.error('Error fetching connection ID from DynamoDB:', error);
-
-			// Fallback to config on error
-			return this.config.connectionIds?.[connector] || null;
+			console.error('[Orchestrator] Error initializing Composio tools:', error);
+			this.composioTools = {};
+			this.toolsInitialized = true; // Mark as initialized to avoid retrying
 		}
 	}
 
@@ -144,12 +130,15 @@ export class Orchestrator {
 	 * ```
 	 */
 	async processMessage(message: string, additionalContext?: string): Promise<OrchestratorResponse> {
+		// Initialize Composio tools on first message
+		await this.initializeComposioTools();
+
 		console.log('[Orchestrator.processMessage] Starting message processing', {
 			sessionId: this.config.sessionId,
 			messageLength: message.length,
 			hasAdditionalContext: !!additionalContext,
 			historyLength: this.conversationHistory.length,
-			hasDelegationTools: !!this.delegationTools,
+			hasComposioTools: !!this.composioTools && Object.keys(this.composioTools).length > 0,
 		});
 
 		// Add user message to history
@@ -183,7 +172,7 @@ export class Orchestrator {
 			const result = await generateText({
 				model: this.model,
 				messages: this.conversationHistory,
-				tools: this.delegationTools,
+				tools: this.composioTools && Object.keys(this.composioTools).length > 0 ? this.composioTools : undefined,
 			});
 
 			console.log('[Orchestrator.processMessage] generateText completed', {
@@ -253,12 +242,15 @@ export class Orchestrator {
 	 * ```
 	 */
 	async processMessageStream(message: string, additionalContext?: string) {
+		// Initialize Composio tools on first message
+		await this.initializeComposioTools();
+
 		console.log('[Orchestrator.processMessageStream] Starting streaming message processing', {
 			sessionId: this.config.sessionId,
 			messageLength: message.length,
 			hasAdditionalContext: !!additionalContext,
 			historyLength: this.conversationHistory.length,
-			hasDelegationTools: !!this.delegationTools,
+			hasComposioTools: !!this.composioTools && Object.keys(this.composioTools).length > 0,
 		});
 
 		// Add user message to history
@@ -278,7 +270,7 @@ export class Orchestrator {
 			const result = streamText({
 				model: this.model,
 				messages: this.conversationHistory,
-				tools: this.delegationTools,
+				tools: this.composioTools && Object.keys(this.composioTools).length > 0 ? this.composioTools : undefined,
 			});
 
 			console.log('[Orchestrator.processMessageStream] streamText initiated');

@@ -1,106 +1,78 @@
 /**
- * Delegation tools for orchestrator
+ * Composio tools provider for orchestrator
  *
- * Provides tools that delegate tasks to specialized sub-agents
+ * Provides direct access to Composio tools (Gmail, Calendar, etc.)
  */
 
-import { tool } from 'ai';
-import {
-	createCalendarAgent,
-	createGmailAgent,
-	executeCalendarTask,
-	executeGmailTask,
-} from './sub-agents.js';
+import { Composio } from '@composio/core';
+import { IntegrationsClient } from '@supermind/shared-aws-utils';
 
 /**
- * Create delegation tools for the orchestrator
+ * Create Composio tools for the orchestrator
  *
- * These tools allow the orchestrator to delegate tasks to specialized sub-agents
- * with access to Composio toolkits (Gmail, Calendar, etc.)
+ * Fetches tools directly from Composio based on user's connected integrations
  *
  * @param userId - User ID (used as Composio entity ID)
  * @param composioApiKey - Composio API key
- * @param getConnectionId - Function to retrieve connection ID for a connector
- * @returns Object containing delegation tools
+ * @returns Object containing Composio tools
  *
  * @example
  * ```typescript
- * const tools = createDelegationTools(
- *   'user_123',
- *   process.env.COMPOSIO_API_KEY!,
- *   async (connector) => connectionIds[connector] || null
- * );
+ * const tools = await createComposioTools('user_123', process.env.COMPOSIO_API_KEY!);
  * ```
  */
-export function createDelegationTools(
+export async function createComposioTools(
 	userId: string,
-	composioApiKey: string,
-	getConnectionId: (connector: string) => Promise<string | null>
+	composioApiKey: string
 ) {
-	return {
-		delegate_to_gmail: tool({
-			description:
-				'Delegate Gmail-related tasks like searching emails, sending emails, reading emails, managing drafts',
-			parameters: {
-				type: 'object',
-				properties: {
-					task: {
-						type: 'string',
-						description: 'The specific Gmail task to perform',
-					},
-				},
-				required: ['task'],
-			} as const,
-			// @ts-expect-error - AI SDK v5 type inference issue
-			execute: async (args: { task: string }) => {
-				const connectionId = await getConnectionId('gmail');
-				if (!connectionId) {
-					return {
-						error: 'Gmail not connected. Please connect Gmail first in your profile settings.',
-					};
-				}
+	const composio = new Composio({ apiKey: composioApiKey });
 
-				try {
-					const agent = await createGmailAgent(userId, connectionId, composioApiKey);
-					const result = await executeGmailTask(agent, args.task);
-					return { result };
-				} catch (error: any) {
-					return { error: `Gmail task failed: ${error.message}` };
-				}
-			},
-		}),
+	// Fetch user's active integrations
+	const integrations = await IntegrationsClient.listIntegrations(userId);
+	const activeIntegrations = integrations?.filter(i => i.connectionStatus === 'active') || [];
 
-		delegate_to_calendar: tool({
-			description:
-				'Delegate Google Calendar tasks like checking schedule, creating events, finding meetings, updating events',
-			parameters: {
-				type: 'object',
-				properties: {
-					task: {
-						type: 'string',
-						description: 'The specific Calendar task to perform',
-					},
-				},
-				required: ['task'],
-			} as const,
-			// @ts-expect-error - AI SDK v5 type inference issue
-			execute: async (args: { task: string }) => {
-				const connectionId = await getConnectionId('google_calendar');
-				if (!connectionId) {
-					return {
-						error:
-							'Google Calendar not connected. Please connect Calendar first in your profile settings.',
-					};
-				}
+	console.log('[createComposioTools] Active integrations:', {
+		userId,
+		integrations: activeIntegrations.map(i => i.connectorName),
+	});
 
-				try {
-					const agent = await createCalendarAgent(userId, connectionId, composioApiKey);
-					const result = await executeCalendarTask(agent, args.task);
-					return { result };
-				} catch (error: any) {
-					return { error: `Calendar task failed: ${error.message}` };
-				}
-			},
-		}),
+	if (activeIntegrations.length === 0) {
+		console.log('[createComposioTools] No active integrations found, returning empty tools');
+		return {};
+	}
+
+	// Map integration providers to Composio app names
+	const appMap: Record<string, string> = {
+		'gmail': 'gmail',
+		'google_calendar': 'googlecalendar',
 	};
+
+	// Get toolkits for all active integrations
+	const toolkits = activeIntegrations
+		.map(i => appMap[i.connectorName])
+		.filter(Boolean);
+
+	console.log('[createComposioTools] Fetching tools for toolkits:', toolkits);
+
+	if (toolkits.length === 0) {
+		console.log('[createComposioTools] No supported toolkits found');
+		return {};
+	}
+
+	try {
+		// Get all tools for connected integrations
+		const tools = await composio.tools.get(userId, {
+			toolkits: toolkits as any,
+		});
+
+		console.log('[createComposioTools] Successfully fetched Composio tools:', {
+			toolCount: Object.keys(tools).length,
+			toolNames: Object.keys(tools),
+		});
+
+		return tools;
+	} catch (error: any) {
+		console.error('[createComposioTools] Error fetching Composio tools:', error);
+		return {};
+	}
 }
