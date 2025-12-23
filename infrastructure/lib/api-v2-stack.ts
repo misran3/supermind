@@ -101,6 +101,9 @@ export class ApiV2Stack extends cdk.Stack {
 				SUPERMEMORY_API_KEY_SECRET_NAME: props.supermemoryApiKeySecret.secretName,
 				SUPERMEMORY_API_KEY: process.env.SUPERMEMORY_API_KEY || '',
 				COMPOSIO_API_KEY: process.env.COMPOSIO_API_KEY || '',
+				LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY || '',
+				LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY || '',
+				LANGFUSE_BASE_URL: process.env.LANGFUSE_BASE_URL || 'https://us.cloud.langfuse.com',
 			},
 			tableGrants: [props.usersTable, props.integrationsTable, props.chatHistoryTable],
 		});
