@@ -200,6 +200,7 @@ async function* streamOrchestratorResponse(
       userId,
       sessionId,
       supermemoryApiKey,
+      composioApiKey: process.env.COMPOSIO_API_KEY || '',
       streaming: true,
       region: process.env.AWS_REGION || 'us-east-1',
       verbose: process.env.VERBOSE === 'true',

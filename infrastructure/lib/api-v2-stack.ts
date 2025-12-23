@@ -100,6 +100,7 @@ export class ApiV2Stack extends cdk.Stack {
 				USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
 				SUPERMEMORY_API_KEY_SECRET_NAME: props.supermemoryApiKeySecret.secretName,
 				SUPERMEMORY_API_KEY: process.env.SUPERMEMORY_API_KEY || '',
+				COMPOSIO_API_KEY: process.env.COMPOSIO_API_KEY || '',
 			},
 			tableGrants: [props.usersTable, props.integrationsTable, props.chatHistoryTable],
 		});
