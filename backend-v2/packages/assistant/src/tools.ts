@@ -5,7 +5,6 @@
  */
 
 import { tool } from 'ai';
-import { z } from 'zod';
 import {
 	createCalendarAgent,
 	createGmailAgent,
@@ -42,9 +41,16 @@ export function createDelegationTools(
 		delegate_to_gmail: tool({
 			description:
 				'Delegate Gmail-related tasks like searching emails, sending emails, reading emails, managing drafts',
-			parameters: z.object({
-				task: z.string().describe('The specific Gmail task to perform'),
-			}),
+			parameters: {
+				type: 'object',
+				properties: {
+					task: {
+						type: 'string',
+						description: 'The specific Gmail task to perform',
+					},
+				},
+				required: ['task'],
+			} as const,
 			// @ts-expect-error - AI SDK v5 type inference issue
 			execute: async (args: { task: string }) => {
 				const connectionId = await getConnectionId('gmail');
@@ -67,9 +73,16 @@ export function createDelegationTools(
 		delegate_to_calendar: tool({
 			description:
 				'Delegate Google Calendar tasks like checking schedule, creating events, finding meetings, updating events',
-			parameters: z.object({
-				task: z.string().describe('The specific Calendar task to perform'),
-			}),
+			parameters: {
+				type: 'object',
+				properties: {
+					task: {
+						type: 'string',
+						description: 'The specific Calendar task to perform',
+					},
+				},
+				required: ['task'],
+			} as const,
 			// @ts-expect-error - AI SDK v5 type inference issue
 			execute: async (args: { task: string }) => {
 				const connectionId = await getConnectionId('google_calendar');
