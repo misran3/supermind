@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@supermind/shared-aws-utils": ["../../packages/shared-aws-utils/src/index.ts"],
+      "@supermind/shared-utils": ["../../packages/shared-utils/src/index.ts"],
+      "@supermind/assistant": ["../../packages/assistant/src/index.ts"]
+    }
+  }
+}

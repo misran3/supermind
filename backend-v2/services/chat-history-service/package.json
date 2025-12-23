@@ -1,0 +1,18 @@
+{
+  "name": "chat-history-service",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.159",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/event-handler": "^2.30.0",
+    "@aws-lambda-powertools/logger": "^2.30.0",
+    "@supermind/shared-aws-utils": "^0.1.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@supermind/shared-aws-utils",
+  "version": "0.1.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.30.0",
+    "@aws-sdk/client-dynamodb": "^3.957.0",
+    "@aws-sdk/client-secrets-manager": "^3.957.0",
+    "@aws-sdk/lib-dynamodb": "^3.957.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.159",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

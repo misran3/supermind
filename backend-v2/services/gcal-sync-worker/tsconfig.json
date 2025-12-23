@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["@types/aws-lambda", "@types/bun"],
+    "baseUrl": ".",
+    "paths": {
+      "@supermind/shared-aws-utils": ["../../packages/shared-aws-utils/src/index.ts"],
+      "@supermind/shared-utils": ["../../packages/shared-utils/src/index.ts"],
+      "@supermind/assistant": ["../../packages/assistant/src/index.ts"],
+      "@supermind/supermemory-wrapper": ["../../packages/supermemory-wrapper/src/index.ts"]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "web-chat-service",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.30.0",
+    "@supermind/assistant": "^0.1.0",
+    "@supermind/shared-aws-utils": "^0.1.0",
+    "@supermind/shared-utils": "^0.1.0",
+    "aws-jwt-verify": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.159",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

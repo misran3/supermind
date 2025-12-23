@@ -1,0 +1,23 @@
+{
+  "name": "gmail-sync-worker",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@supermind/supermemory-wrapper": "^0.1.0",
+    "@supermind/shared-aws-utils": "^0.1.0",
+    "@supermind/shared-utils": "^0.1.0",
+    "@aws-lambda-powertools/logger": "^2.10.0",
+    "@aws-lambda-powertools/tracer": "^2.10.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "@ai-sdk/amazon-bedrock": "^1.0.7",
+    "ai": "^5.0.29"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
